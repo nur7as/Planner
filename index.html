@@ -1892,6 +1892,7 @@ sb.auth.onAuthStateChange(async (event, session) => {
 });
 
 function startRealtime() {
+  if (realtimeChannel && realtimeChannel.state === 'joined') return;
   stopRealtime();
   const chName = 'realtime-' + (currentUser?.id || 'anon') + '-' + Date.now();
   realtimeChannel = sb.channel(chName)
