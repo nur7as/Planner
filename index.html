@@ -1547,6 +1547,7 @@ window.sb = supabase.createClient(SUPA_URL, SUPA_KEY);
 
 let currentUser = null;
 let syncTimeout = null;
+let realtimeChannel = null;
 
 // SYNC STATE UI
 function setSyncState(state, text) {
@@ -1890,7 +1891,6 @@ sb.auth.onAuthStateChange(async (event, session) => {
   }
 });
 
-let realtimeChannel = null;
 function startRealtime() {
   stopRealtime();
   realtimeChannel = sb.channel('db-user-settings')
