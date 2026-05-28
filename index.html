@@ -1881,8 +1881,8 @@ sb.auth.onAuthStateChange(async (event, session) => {
       renderPanel(currentPanel);
     }
     if (currentPanel === 'profile') renderProfile();
-    // Only start realtime on first login, not on token refresh
-    if (isFirstLogin || !realtimeChannel) startRealtime();
+    // Always start/restart realtime
+    startRealtime();
   } else {
     currentUser = null;
     stopRealtime();
@@ -2170,14 +2170,6 @@ renderInbox();
 document.getElementById('m-date').value=today();
 
 // Ensure realtime starts if user already logged in
-setTimeout(async () => {
-  const { data } = await sb.auth.getSession();
-  if (data?.session?.user) {
-    if (!currentUser) currentUser = data.session.user;
-    if (!realtimeChannel || realtimeChannel.state !== 'joined') startRealtime();
-  }
-}, 2000);
-
 // Settings input enter keys
 ['new-prio-name','new-tag-name','new-person-name','new-proj-name'].forEach(id=>{
   document.getElementById(id)?.addEventListener('keydown',e=>{ if(e.key==='Enter'){ if(id.includes('prio'))addPrio(); else if(id.includes('tag'))addTag(); else if(id.includes('person'))addPerson(); else addProject(); } });
