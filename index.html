@@ -2172,11 +2172,11 @@ document.getElementById('m-date').value=today();
 // Ensure realtime starts if user already logged in
 setTimeout(async () => {
   const { data } = await sb.auth.getSession();
-  if (data?.session?.user && !realtimeChannel) {
-    currentUser = data.session.user;
-    startRealtime();
+  if (data?.session?.user) {
+    if (!currentUser) currentUser = data.session.user;
+    if (!realtimeChannel || realtimeChannel.state !== 'joined') startRealtime();
   }
-}, 1500);
+}, 2000);
 
 // Settings input enter keys
 ['new-prio-name','new-tag-name','new-person-name','new-proj-name'].forEach(id=>{
