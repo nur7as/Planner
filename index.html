@@ -2173,9 +2173,9 @@ document.getElementById('m-date').value=today();
 
 // Check existing session on page load and start realtime
 (async () => {
-  const { data } = await sb.auth.getSession();
-  if (data?.session?.user) {
-    if (!currentUser) currentUser = data.session.user;
+  const { data } = await sb.auth.getUser();
+  if (data?.user) {
+    if (!currentUser) currentUser = data.user;
     updateUserBlock();
     startRealtime();
   }
