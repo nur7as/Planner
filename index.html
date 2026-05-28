@@ -667,7 +667,25 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:14
   </div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.49.4/dist/umd/supabase.min.js"></script>
+<script type="module">
+import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.49.4/+esm';
+const SUPA_URL = 'https://xgwxabxyjetdltcltkwj.supabase.co';
+const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inhnd3hhYnh5amV0ZGx0Y2x0a3dqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk2Nzc4NDksImV4cCI6MjA5NTI1Mzg0OX0.CwsMB6S8JNnwI73-EfQZ1dQtqL0PqslKifN_pR_Q2-k';
+window.sb = createClient(SUPA_URL, SUPA_KEY, {
+  auth: {
+    persistSession: true,
+    storageKey: 'planner_auth',
+    storage: window.localStorage,
+    autoRefreshToken: true,
+    detectSessionInUrl: false
+  }
+});
+// Wait for session to be restored from localStorage, then fire event
+window.sb.auth.getSession().then(({ data }) => {
+  window._initialSession = data?.session || null;
+  window.dispatchEvent(new Event('supabase_ready'));
+});
+</script>
 <script>
 const STORE = 'planner_v2';
 
@@ -1541,17 +1559,6 @@ function importData(input){
 // ═══════════════════════════════════════════
 // SUPABASE
 // ═══════════════════════════════════════════
-const SUPA_URL = 'https://xgwxabxyjetdltcltkwj.supabase.co';
-const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inhnd3hhYnh5amV0ZGx0Y2x0a3dqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk2Nzc4NDksImV4cCI6MjA5NTI1Mzg0OX0.CwsMB6S8JNnwI73-EfQZ1dQtqL0PqslKifN_pR_Q2-k';
-window.sb = supabase.createClient(SUPA_URL, SUPA_KEY, {
-  auth: {
-    persistSession: true,
-    storageKey: 'planner_auth',
-    storage: window.localStorage,
-    autoRefreshToken: true,
-    detectSessionInUrl: false
-  }
-});
 
 let currentUser = null;
 let syncTimeout = null;
@@ -1876,36 +1883,6 @@ async function forceSyncFromCloud() {
   }
 }
 
-// AUTH STATE LISTENER
-sb.auth.onAuthStateChange(async (event, session) => {
-  if (session?.user) {
-    const isFirstLogin = !currentUser;
-    currentUser = session.user;
-    updateUserBlock();
-    const loaded = await loadFromCloud();
-    if (loaded) {
-      buildProjectPanels(); buildProjectsNav();
-      renderPanel(currentPanel);
-    } else {
-      const localTasks = S.tasks.length;
-      if (localTasks > 0) {
-        setSyncState('syncing', 'первая синхронизация...');
-        await saveToCloud();
-      }
-      buildProjectPanels(); buildProjectsNav();
-      renderPanel(currentPanel);
-    }
-    if (currentPanel === 'profile') renderProfile();
-    // Start realtime after short delay to ensure SDK ready
-    setTimeout(() => startRealtime(), 500);
-  } else {
-    currentUser = null;
-    stopRealtime();
-    updateUserBlock();
-    if (currentPanel === 'profile') renderProfile();
-  }
-});
-
 function startRealtime() {
   if (realtimeChannel && realtimeChannel.state === 'joined') return;
   stopRealtime();
@@ -2189,15 +2166,47 @@ buildProjectsNav();
 renderInbox();
 document.getElementById('m-date').value=today();
 
-// Check existing session on page load and start realtime
-(async () => {
-  const { data } = await sb.auth.getUser();
-  if (data?.user) {
-    if (!currentUser) currentUser = data.user;
+// Wait for Supabase to be ready, then check session and start realtime
+function initSupabase() {
+  sb.auth.onAuthStateChange(async (event, session) => {
+    if (session?.user) {
+      const isFirstLogin = !currentUser;
+      currentUser = session.user;
+      updateUserBlock();
+      if (isFirstLogin) {
+        const loaded = await loadFromCloud();
+        if (loaded) {
+          buildProjectPanels(); buildProjectsNav();
+          renderPanel(currentPanel);
+        }
+        if (currentPanel === 'profile') renderProfile();
+      }
+      setTimeout(() => startRealtime(), 300);
+    } else {
+      currentUser = null;
+      stopRealtime();
+      updateUserBlock();
+      if (currentPanel === 'profile') renderProfile();
+    }
+  });
+
+  // Use session already fetched by ESM module — no extra async needed
+  const session = window._initialSession;
+  if (session?.user && !currentUser) {
+    currentUser = session.user;
     updateUserBlock();
+    loadFromCloud().then(loaded => {
+      if (loaded) { buildProjectPanels(); buildProjectsNav(); renderPanel(currentPanel); }
+    });
     startRealtime();
   }
-})();
+}
+
+if (window._initialSession !== undefined) {
+  initSupabase();
+} else {
+  window.addEventListener('supabase_ready', initSupabase);
+}
 
 // Settings input enter keys
 ['new-prio-name','new-tag-name','new-person-name','new-proj-name'].forEach(id=>{
