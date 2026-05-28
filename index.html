@@ -1863,6 +1863,7 @@ async function forceSyncFromCloud() {
 // AUTH STATE LISTENER
 sb.auth.onAuthStateChange(async (event, session) => {
   if (session?.user) {
+    const isFirstLogin = !currentUser;
     currentUser = session.user;
     updateUserBlock();
     const loaded = await loadFromCloud();
@@ -1879,8 +1880,8 @@ sb.auth.onAuthStateChange(async (event, session) => {
       renderPanel(currentPanel);
     }
     if (currentPanel === 'profile') renderProfile();
-    // Start realtime sync
-    startRealtime();
+    // Only start realtime on first login, not on token refresh
+    if (isFirstLogin || !realtimeChannel) startRealtime();
   } else {
     currentUser = null;
     stopRealtime();
@@ -1915,6 +1916,9 @@ function startRealtime() {
     })
     .subscribe((status) => {
       console.log('Realtime status:', status);
+      if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+        setTimeout(() => { if(currentUser) startRealtime(); }, 3000);
+      }
     });
 }
 function stopRealtime() {
