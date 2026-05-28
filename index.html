@@ -1881,8 +1881,8 @@ sb.auth.onAuthStateChange(async (event, session) => {
       renderPanel(currentPanel);
     }
     if (currentPanel === 'profile') renderProfile();
-    // Always start/restart realtime
-    startRealtime();
+    // Start realtime after short delay to ensure SDK ready
+    setTimeout(() => startRealtime(), 500);
   } else {
     currentUser = null;
     stopRealtime();
@@ -1893,7 +1893,8 @@ sb.auth.onAuthStateChange(async (event, session) => {
 
 function startRealtime() {
   stopRealtime();
-  realtimeChannel = sb.channel('db-user-settings')
+  const chName = 'realtime-' + (currentUser?.id || 'anon') + '-' + Date.now();
+  realtimeChannel = sb.channel(chName)
     .on('postgres_changes', {
       event: '*',
       schema: 'public',
