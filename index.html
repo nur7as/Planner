@@ -1129,30 +1129,70 @@ function renderStats(){
 }
 
 // BOARD (TRELLO)
-const BOARD_COLS=[
-  {id:'todo', label:'Новые'},
-  {id:'inprogress', label:'В процессе'},
-  {id:'done', label:'Завершено'},
+const FIXED_COLS = [
+  {id:'inprogress', label:'В процессе', fixed:true},
+  {id:'done', label:'Завершено', fixed:true},
 ];
+const DEFAULT_CUSTOM_COL = {id:'todo', label:'Новые'};
 let boardDragId=null, boardDragTarget=null;
+let colDragProjId=null, colDragId=null;
+
+function getBoardCols(projId){
+  const proj = getProject(projId);
+  const custom = proj?.cols || [DEFAULT_CUSTOM_COL];
+  return [...custom, ...FIXED_COLS];
+}
+
+function addBoardCol(projId){
+  const name = prompt('Название колонки:');
+  if(!name || !name.trim()) return;
+  const proj = getProject(projId);
+  if(!proj.cols) proj.cols = [{id:'todo', label:'Новые'}];
+  proj.cols.push({id:'col_'+rid(), label:name.trim()});
+  save(); renderBoard(projId);
+  if(isMobile()) renderMobProjectTabs(projId);
+}
+
+function renameBoardCol(projId, colId){
+  const proj = getProject(projId);
+  const col = proj?.cols?.find(c=>c.id===colId);
+  if(!col) return;
+  const name = prompt('Новое название:', col.label);
+  if(!name || !name.trim()) return;
+  col.label = name.trim();
+  save(); renderBoard(projId);
+  if(isMobile()) renderMobProjectTabs(projId);
+}
+
+function deleteBoardCol(projId, colId){
+  const proj = getProject(projId);
+  if(!proj?.cols) return;
+  const hasTasks = S.tasks.some(t=>t.project===projId&&t.boardCol===colId);
+  if(hasTasks && !confirm('В колонке есть задачи — они перейдут в «Новые». Продолжить?')) return;
+  S.tasks.forEach(t=>{ if(t.project===projId&&t.boardCol===colId) t.boardCol='todo'; });
+  proj.cols = proj.cols.filter(c=>c.id!==colId);
+  if(!proj.cols.length) proj.cols = [{id:'todo', label:'Новые'}];
+  save(); renderBoard(projId);
+  if(isMobile()) renderMobProjectTabs(projId);
+}
 
 function renderBoard(projId){
   const proj=getProject(projId);
   if(!proj) return;
   const panel=document.getElementById('panel-'+projId);
   if(!panel) return;
+  const cols = getBoardCols(projId);
 
-  const colsHtml=BOARD_COLS.map(col=>{
+  const colsHtml=cols.map(col=>{
     const tasks=S.tasks.filter(t=>t.project===projId&&t.boardCol===col.id);
     const cardsHtml=tasks.map(t=>{
       const prio=getPrio(t.prio);
       const tag=getTag(t.tag);
       const person=getPerson(t.person);
-      // Mobile: show move buttons instead of drag
       const mobMoveBtn = window.innerWidth<=768 ? `
         <div style="display:flex;gap:4px;margin-top:8px;flex-wrap:wrap;">
-          ${BOARD_COLS.filter(c=>c.id!==col.id).map(c=>`
-            <button onclick="event.stopPropagation();mobMoveCard('${t.id}','${projId}','${c.id}')" style="font-size:10px;padding:3px 8px;border-radius:20px;border:1px solid var(--border2);background:var(--bg4);color:var(--text2);cursor:pointer;font-family:var(--font);">→ ${c.label}</button>
+          ${cols.filter(c=>c.id!==col.id).map(c=>`
+            <button onclick="event.stopPropagation();mobMoveCard('${t.id}','${projId}','${c.id}')" style="font-size:10px;padding:3px 8px;border-radius:20px;border:1px solid var(--border2);background:var(--bg4);color:var(--text2);cursor:pointer;font-family:var(--font);">→ ${esc(c.label)}</button>
           `).join('')}
         </div>` : '';
       return `<div class="board-card${t.done?' done-item':''}" data-id="${t.id}" draggable="true"
@@ -1169,10 +1209,27 @@ function renderBoard(projId){
         ${mobMoveBtn}
       </div>`;
     }).join('');
-    return `<div class="board-col">
-      <div class="col-hdr">
-        <span>${col.label}</span>
-        <span class="col-count">${tasks.length}</span>
+
+    // Header with edit/delete only for custom cols
+    const colActions = !col.fixed ? `
+      <span onclick="event.stopPropagation();renameBoardCol('${projId}','${col.id}')" style="cursor:pointer;opacity:.5;font-size:12px;padding:2px 4px;" title="Переименовать">✎</span>
+      <span onclick="event.stopPropagation();deleteBoardCol('${projId}','${col.id}')" style="cursor:pointer;opacity:.5;font-size:14px;padding:2px 4px;color:var(--red);" title="Удалить">×</span>
+    ` : '';
+
+    return `<div class="board-col" draggable="true"
+      ondragstart="colDragStart(event,'${projId}','${col.id}')"
+      ondragend="colDragEnd(event)"
+      ondragover="colDragOver(event,'${projId}','${col.id}')"
+      ondrop="colDrop(event,'${projId}','${col.id}')">
+      <div class="col-hdr" style="cursor:grab;">
+        <span style="display:flex;align-items:center;gap:6px;">
+          <span style="color:var(--text3);font-size:12px;cursor:grab;">⠿</span>
+          ${esc(col.label)}
+        </span>
+        <div style="display:flex;align-items:center;gap:4px;">
+          ${colActions}
+          <span class="col-count">${tasks.length}</span>
+        </div>
       </div>
       <div class="col-body" id="col-${projId}-${col.id}"
         ondragover="boardColDragOver(event,'${projId}','${col.id}')"
@@ -1184,7 +1241,11 @@ function renderBoard(projId){
     </div>`;
   }).join('');
 
-  panel.innerHTML=`<div class="board">${colsHtml}</div>`;
+  const addColBtn = `<div style="display:flex;align-items:flex-start;padding-top:2px;">
+    <button onclick="addBoardCol('${projId}')" style="flex:0 0 auto;height:36px;padding:0 16px;background:var(--bg3);border:1px dashed var(--border2);border-radius:var(--r);color:var(--text3);cursor:pointer;font-size:13px;font-family:var(--font);white-space:nowrap;">+ Колонка</button>
+  </div>`;
+
+  panel.innerHTML=`<div class="board">${colsHtml}${addColBtn}</div>`;
 }
 
 function mobMoveCard(taskId, projId, colId){
@@ -1204,6 +1265,45 @@ function boardDragStart(e,id){
   setTimeout(()=>{ const el=document.querySelector(`.board-card[data-id="${id}"]`); if(el)el.classList.add('dragging-card'); },0);
 }
 function boardDragEnd(e){ document.querySelectorAll('.board-card.dragging-card').forEach(el=>el.classList.remove('dragging-card')); }
+
+// COL DRAG
+function colDragStart(e, projId, colId){
+  // Don't interfere with card drag
+  if(boardDragId) { e.preventDefault(); return; }
+  colDragProjId=projId; colDragId=colId;
+  e.dataTransfer.effectAllowed='move';
+  setTimeout(()=>{ e.target.style.opacity='.4'; },0);
+}
+function colDragEnd(e){ e.target.style.opacity=''; colDragId=null; colDragProjId=null; document.querySelectorAll('.board-col').forEach(c=>c.style.outline=''); }
+function colDragOver(e, projId, colId){
+  if(!colDragId || colDragId===colId || colDragProjId!==projId) return;
+  e.preventDefault(); e.stopPropagation();
+  document.querySelectorAll('.board-col').forEach(c=>c.style.outline='');
+  e.currentTarget.style.outline='2px solid var(--accent)';
+}
+function colDrop(e, projId, colId){
+  if(!colDragId || colDragId===colId || colDragProjId!==projId) return;
+  e.preventDefault(); e.stopPropagation();
+  const proj=getProject(projId);
+  const cols=getBoardCols(projId);
+  const fromIdx=cols.findIndex(c=>c.id===colDragId);
+  const toIdx=cols.findIndex(c=>c.id===colId);
+  if(fromIdx<0||toIdx<0) return;
+  // Reorder only custom cols (proj.cols), keeping fixed at end
+  const allCols=[...(proj.cols||[DEFAULT_CUSTOM_COL])];
+  const fixedIds=FIXED_COLS.map(c=>c.id);
+  // Only allow reordering among same type (custom↔custom)
+  const fromFixed=fixedIds.includes(colDragId), toFixed=fixedIds.includes(colId);
+  if(fromFixed||toFixed) return; // can't reorder fixed cols
+  const fi=allCols.findIndex(c=>c.id===colDragId);
+  const ti=allCols.findIndex(c=>c.id===colId);
+  if(fi<0||ti<0) return;
+  const [moved]=allCols.splice(fi,1);
+  allCols.splice(ti,0,moved);
+  proj.cols=allCols;
+  save(); renderBoard(projId);
+  if(isMobile()) renderMobProjectTabs(projId);
+}
 function boardColDragOver(e,projId,colId){ e.preventDefault(); document.getElementById(`col-${projId}-${colId}`)?.classList.add('dragover-col'); }
 function boardColDragLeave(e,projId,colId){ document.getElementById(`col-${projId}-${colId}`)?.classList.remove('dragover-col'); }
 function boardColDrop(e,projId,colId){
